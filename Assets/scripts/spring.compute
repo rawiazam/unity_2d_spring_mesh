@@ -1,0 +1,109 @@
+// Each #kernel tells which function to compile; you can have many kernels
+#pragma kernel CSMain
+
+struct Point
+{
+    float2 position;
+    float2 velocity;
+};
+
+struct SpringInfos
+{
+    int firstIndex;
+    int secondIndex;
+    float initialDistance;
+};
+
+struct PersistentPointInfo
+{
+    float2 initialPosition;
+};
+
+struct Result
+{
+    float2 firstVelocity;
+    float2 secondVelocity;
+};
+
+StructuredBuffer<Point> points;
+StructuredBuffer<PersistentPointInfo> persistentPointInfo;
+StructuredBuffer<SpringInfos> springInfos;
+RWStructuredBuffer<Result> results;
+uint pairCount;
+float springConstant;
+float damping;
+float returnForce;
+float maxReturnDistance;
+float minimumGate;
+float deltaTime;
+
+// Create a RenderTexture with enableRandomWrite flag and set it.
+// with cs.SetTexture
+// RWTexture2D<float4> Result;
+
+[numthreads(256, 1, 1)] void CSMain(uint3 id : SV_DispatchThreadID)
+{
+    uint idx = id.x;
+    if (idx >= pairCount)
+        return;
+    int firstIndex = springInfos[idx].firstIndex;
+    int secondIndex = springInfos[idx].secondIndex;
+    float2 first = points[firstIndex].position;
+    float2 firstOrigin = persistentPointInfo[firstIndex].initialPosition;
+    float2 firstVelocity = points[firstIndex].velocity;
+    float2 second = points[secondIndex].position;
+    float2 secondVelocity = points[secondIndex].velocity;
+    float2 secondOrigin = persistentPointInfo[secondIndex].initialPosition;
+    float minDistance = springInfos[idx].initialDistance;
+    // float2 first = pairs[idx].first;
+    // float2 firstOrigin = persistentInfo[idx].firstInitialPosition;
+    // float2 firstVelocity = pairs[idx].firstVelocity;
+    // float2 second = pairs[idx].second;
+    // float2 secondOrigin = persistentInfo[idx].secondInitialPosition;
+    // float2 secondVelocity = pairs[idx].secondVelocity;
+    // float minDistance = pairs[idx].minDistance;
+    float dist = distance(first, second);
+
+    float2 secondFinalVelocity;
+    float2 firstFinalVelocity;
+
+    Result res;
+    if (dist < minDistance) // abs(dist - minDistance) < 0.1)
+    {
+        firstFinalVelocity = float2(0, 0);
+        secondFinalVelocity = float2(0, 0);
+    }
+    else
+    {
+        float force = (dist - minDistance) * springConstant;
+        // if (dist < minDistance) force = -force;
+        float2 direction = normalize(first - second);
+        firstFinalVelocity = -direction * force - firstVelocity * damping;
+        secondFinalVelocity = direction * force - secondVelocity * damping;
+    }
+    float firstOriginDistance = distance(first, firstOrigin);
+    if (firstOriginDistance < maxReturnDistance && firstOriginDistance > 0.1)
+    {
+        float2 direction = normalize(firstOrigin - first);
+        firstFinalVelocity += direction * returnForce * firstOriginDistance - firstVelocity * damping;
+    }
+
+    float secondOriginDistance = distance(second, secondOrigin);
+    if (secondOriginDistance < maxReturnDistance && secondOriginDistance > 0.1)
+    {
+        float2 direction = normalize(secondOrigin - second);
+        secondFinalVelocity += direction * returnForce * secondOriginDistance - secondVelocity * damping;
+    }
+
+    if (length(firstFinalVelocity) < minimumGate)
+        firstFinalVelocity = firstFinalVelocity * 0.2 - firstVelocity * 0.5;
+    if (length(secondFinalVelocity) < minimumGate)
+        secondFinalVelocity = secondFinalVelocity * 0.2 - secondVelocity * 0.5;
+
+    res.firstVelocity = firstFinalVelocity * deltaTime;
+    res.secondVelocity = secondFinalVelocity * deltaTime;
+
+    results[idx] = res;
+
+    // Result[id.xy] = float4(id.x & id.y, (id.x & 15)/15.0, (id.y & 15)/15.0, 0.0);
+}

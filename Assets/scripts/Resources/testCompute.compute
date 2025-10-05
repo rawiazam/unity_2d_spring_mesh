@@ -1,0 +1,105 @@
+// File: Density.compute
+#pragma kernel Clear
+#pragma kernel AccumulatePoints
+#pragma kernel BlurH
+#pragma kernel BlurV
+
+// ---------- Inputs ----------
+StructuredBuffer<float2> _Points;
+uint _PointCount;
+
+int   _Width;
+int   _Height;
+float _SplatRadius;  // in pixels (0..2 is typical)
+float _Scale;        // contribution per point (usually 1)
+
+float2 _WorldMin;    // world rect min (x,y)
+float2 _WorldMax;    // world rect max (x,y)
+
+// ---------- Textures ----------
+RWTexture2D<uint> _DensityU32;
+Texture2D<uint>   _DensityReadU32;  // SRV alias for blur reads
+RWTexture2D<uint> _TempU32;
+
+// ---------- Helpers ----------
+bool InBounds(int2 p, int w, int h) {
+    return (uint)p.x < (uint)w && (uint)p.y < (uint)h;
+}
+
+float2 WorldToUV(float2 p) {
+    float2 size = max(_WorldMax - _WorldMin, float2(1e-6,1e-6));
+    return (p - _WorldMin) / size; // [0,1]
+}
+
+[numthreads(256,1,1)]
+void Clear(uint3 id : SV_DispatchThreadID)
+{
+    uint idx = id.x;
+    uint N = (uint)(_Width * _Height);
+    if (idx >= N) return;
+    int2 xy = int2(idx % _Width, idx / _Width);
+    _DensityU32[xy] = 0;
+}
+
+[numthreads(256,1,1)]
+void AccumulatePoints(uint3 id : SV_DispatchThreadID)
+{
+    uint i = id.x;
+    if (i >= _PointCount) return;
+
+    float2 uv = WorldToUV(_Points[i]);
+    if (any(uv < 0.0) || any(uv > 1.0)) return;
+
+    float2 pPixF = uv * float2(_Width, _Height);
+    int2   pPix  = (int2)floor(pPixF + 0.5);
+
+    int r = (int)_SplatRadius;
+    if (r <= 0) {
+        if (InBounds(pPix, _Width, _Height))
+            InterlockedAdd(_DensityU32[pPix], (uint)max(1, _Scale));
+        return;
+    }
+
+    // Small circular splat (fast)
+    for (int dy = -r; dy <= r; dy++) {
+        int yy = pPix.y + dy;
+        if ((uint)yy >= (uint)_Height) continue;
+
+        int dxMax = (int)sqrt((float)(r*r - dy*dy));
+        for (int dx = -dxMax; dx <= dxMax; dx++) {
+            int xx = pPix.x + dx;
+            if ((uint)xx >= (uint)_Width) continue;
+            InterlockedAdd(_DensityU32[int2(xx,yy)], (uint)max(1, _Scale));
+        }
+    }
+}
+
+// Simple box blur (horizontal)
+[numthreads(8,8,1)]
+void BlurH(uint3 g : SV_DispatchThreadID)
+{
+    if (g.x >= _Width || g.y >= _Height) return;
+
+    int radius = 2; // 5-tap
+    uint sum = 0;
+    for (int k = -radius; k <= radius; k++) {
+        int x = clamp((int)g.x + k, 0, _Width - 1);
+        sum += _DensityReadU32[int2(x, g.y)];
+    }
+    _TempU32[int2(g.x, g.y)] = sum / (2 * radius + 1);
+}
+
+// Simple box blur (vertical)
+[numthreads(8,8,1)]
+void BlurV(uint3 g : SV_DispatchThreadID)
+{
+    if (g.x >= _Width || g.y >= _Height) return;
+
+    int radius = 2;
+    uint sum = 0;
+    for (int k = -radius; k <= radius; k++) {
+        int y = clamp((int)g.y + k, 0, _Height - 1);
+        sum += _TempU32[int2(g.x, y)];
+    }
+    _DensityU32[int2(g.x, g.y)] = sum / (2 * radius + 1);
+}
