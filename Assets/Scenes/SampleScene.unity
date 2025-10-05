@@ -403,7 +403,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e19cceaecd718844e84c677d5d392da7, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  impulseStrength: 150
+  impulseStrength: 1.5
   cutoff: 2
   time_factor: 0.1
 --- !u!114 &519420034
@@ -536,16 +536,16 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: cb71bffe60a3f6a42be917e02fce81d3, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  density: 35
-  width: 20
-  height: 12
-  springConstant: 300
-  dampingForce: 0.05
-  returnForce: 1
-  maxReturnDistance: 1.5
+  density: 55
+  width: 18
+  height: 10
+  springConstant: 250
+  dampingForce: 0.1
+  returnForce: 0.5
+  maxReturnDistance: 7
   springComputeShader: {fileID: 7200000, guid: 4bd55cc3dfc564a4684f89c28d905a22, type: 3}
   meshMaterial: {fileID: 2100000, guid: 9276f097d232fdf4fad5b7992daa38a7, type: 2}
-  minVelocityGate: 0.5
+  minVelocityGate: 0.02
 --- !u!4 &916460070
 Transform:
   m_ObjectHideFlags: 0

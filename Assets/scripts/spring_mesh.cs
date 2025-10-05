@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -13,30 +14,6 @@ using UnityEngine.Rendering;
 
 public class spring_mesh : MonoBehaviour
 {
-    private class Line
-    {
-        public GameObject[] points;
-        private NativeArray<Vector2> positions;
-
-        public LineRenderer renderer;
-
-        public Line(GameObject[] points, NativeArray<Vector2> positions, LineRenderer renderer)
-        {
-            this.points = points;
-            this.renderer = renderer;
-            this.positions = positions;
-        }
-
-        public void Update()
-        {
-            Vector3[] vec3Positions = new Vector3[positions.Length];
-            for (int i = 0; i < positions.Length; i++)
-            {
-                vec3Positions[i] = positions[i];
-            }
-            renderer.SetPositions(vec3Positions);
-        }
-    }
 
     [StructLayout(LayoutKind.Sequential)]
     private struct Spring
@@ -44,18 +21,17 @@ public class spring_mesh : MonoBehaviour
         public int firstObjIndex;
         public int secondObjIndex;
         public float initialLength;
-        public Spring(GameObject first, GameObject second, int firstTransformIndex, int secondTransformIndex)
+        public Spring(Vector2 firstPos, Vector2 secondPos, int firstTransformIndex, int secondTransformIndex)
         {
             this.firstObjIndex = firstTransformIndex;
             this.secondObjIndex = secondTransformIndex;
-            this.initialLength = Vector2.Distance(first.transform.position, second.transform.position);
+            this.initialLength = Vector2.Distance(secondPos, firstPos);
         }
     }
 
     private struct ShaderResult
     {
         public Vector2 firstVelocity;
-        public Vector2 secondVelocity;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -63,13 +39,6 @@ public class spring_mesh : MonoBehaviour
     {
         public Vector2 position;
         public Vector2 velocity;
-        // public Vector2 firstPoint;
-        // public Vector2 firstInitialPosition;
-        // public Vector2 firstVelocity;
-        // public Vector2 secondPoint;
-        // public Vector2 secondInitialPosition;
-        // public Vector2 secondVelocity;
-        // public float minDistance;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -81,9 +50,34 @@ public class spring_mesh : MonoBehaviour
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    private struct PersistentPointInfo
+    private unsafe struct PersistentPointInfo
     {
         public Vector2 InitialPosition;
+        public fixed int springIndecies[8];
+
+        public PersistentPointInfo(Vector2 initialPosition)
+        {
+            this.InitialPosition = initialPosition;
+        }
+
+        public void Init()
+        {
+            for (int i = 0; i < 8; i++)
+            {
+                springIndecies[i] = -1;
+            }
+        }
+
+        public void AddSpring(int index)
+        {
+            int currentIndex = 0;
+            while (springIndecies[currentIndex] != -1)
+            {
+                currentIndex++;
+                if (currentIndex == 8) throw new Exception($"tried adding more springs than length - {springIndecies[7]}");
+            }
+            springIndecies[currentIndex] = index;
+        }
     }
     public int density;
     public int width;
@@ -102,18 +96,13 @@ public class spring_mesh : MonoBehaviour
     public SpatialHash2D spatialHash;
 
     private GameObject meshOrigin;
-    private Dictionary<GameObject, Vector3> initialPositions = new Dictionary<GameObject, Vector3>();
-    private List<GameObject> points = new List<GameObject>();
-    private List<mesh_point> mesh_points = new();
-    private List<Line> lines = new List<Line>();
     private List<Spring> _springs = new List<Spring>();
     private NativeArray<Spring> springs;
-    private List<Transform> pointTransforms = new();
+    private List<Vector2> points = new List<Vector2>();
     private NativeArray<Vector3> positions = new();
     private NativeArray<bool> staticIndecies;
     private List<bool> _staticIndecies = new();
 
-    private TransformAccessArray transformAccessArray;
     private NativeArray<ShaderResult>[] nativeResults = new NativeArray<ShaderResult>[20];
     private uint currentNativeArrayIndex;
 
@@ -125,7 +114,7 @@ public class spring_mesh : MonoBehaviour
     ComputeBuffer persistentPointInfoBuffer;
     NativeArray<PersistentPointInfo> persistentPointInfoBufferArray;
     ComputeBuffer resultBuffer;
-    ShaderResult[] results;
+
     private JobHandle updateHashMapJob = default;
 
     private dynamic_mesh dynamicMesh;
@@ -150,16 +139,16 @@ public class spring_mesh : MonoBehaviour
         int widthOffset = (int)(width * density / 2.0);
         int heightOffset = (int)(height * density / 2.0);
         int currentIndex = 0;
-        List<GameObject> columns = new List<GameObject>();
+        Vector2 currentPosition = (Vector2)gameObject.transform.position;
         for (int i = -heightOffset; i < heightOffset; i++)
         {
             for (int j = -widthOffset; j < widthOffset; j++)
             {
-                Vector2 meshOffset = new Vector2(j / (float)density, i / (float)density);
-                GameObject point = new GameObject($"meshPoint{points.Count}");
-                point.transform.parent = meshOrigin.transform;
-                point.transform.position = meshOrigin.transform.position + (Vector3)meshOffset;
-                mesh_point pointComponent = point.AddComponent<mesh_point>();
+                Vector2 meshOffset = new Vector2(j / (float)density, i / (float)density) + currentPosition;
+                // GameObject point = new GameObject($"meshPoint{points.Count}");
+                // point.transform.parent = meshOrigin.transform;
+                // point.transform.position = meshOrigin.transform.position + (Vector3)meshOffset;
+                // mesh_point pointComponent = point.AddComponent<mesh_point>();
                 // point.AddComponent<SpriteRenderer>();
                 // point.GetComponent<SpriteRenderer>().sprite = target_sprite;
                 // point.GetComponent<SpriteRenderer>().sortingOrder = 2;
@@ -169,29 +158,24 @@ public class spring_mesh : MonoBehaviour
                 if (j == -widthOffset || i == -heightOffset || j == widthOffset - 1 || i == heightOffset - 1)
                 {
                     _staticIndecies.Add(true);
-                    point.GetComponent<mesh_point>().isStatic = true;
+                    // point.GetComponent<mesh_point>().isStatic = true;
                 }
                 else
                 {
                     _staticIndecies.Add(false);
                 }
 
-                initialPositions[point] = point.transform.position;
-
                 if (j > -widthOffset)
                 {
-                    _springs.Add(new Spring(point, points.Last(), points.Count(), points.Count() - 1));
+                    _springs.Add(new Spring(meshOffset, points.Last(), points.Count(), points.Count() - 1));
                 }
                 if (i > -heightOffset)
                 {
                     int previousOffset = (i - 1 + heightOffset) * widthOffset * 2 + j + widthOffset;
-                    _springs.Add(new Spring(point, points[previousOffset], points.Count(), previousOffset));
+                    _springs.Add(new Spring(meshOffset, points[previousOffset], points.Count(), previousOffset));
                 }
-                pointComponent.pointIndex = points.Count();
-                points.Add(point);
-                pointTransforms.Add(point.transform);
-                mesh_points.Add(pointComponent);
                 currentIndex++;
+                points.Add(meshOffset);
             }
             // AddLine(points.GetRange(points.Count - widthOffset * 2, widthOffset * 2).ToArray());
         }
@@ -224,55 +208,58 @@ public class spring_mesh : MonoBehaviour
         persistentPointInfoBufferArray = new NativeArray<PersistentPointInfo>(points.Count, Allocator.Persistent);
         SpringInfoBuffer = new ComputeBuffer(_springs.Count, Marshal.SizeOf(typeof(SpringShaderInfo)));
         springInfoBufferArray = new NativeArray<SpringShaderInfo>(_springs.Count, Allocator.Persistent);
-        resultBuffer = new ComputeBuffer(springs.Length, Marshal.SizeOf(typeof(ShaderResult)));
+        resultBuffer = new ComputeBuffer(points.Count, Marshal.SizeOf(typeof(ShaderResult)));
         shaderInput = new NativeArray<ShaderInput>(points.Count(), Allocator.Persistent);
         positions = new NativeArray<Vector3>(points.Count(), Allocator.Persistent);
         pointVelocities = new NativeArray<Vector2>(points.Count(), Allocator.Persistent);
         spatialHash = new SpatialHash2D(points.Count, 1);
         staticIndecies = new NativeArray<bool>(points.Count, Allocator.Persistent);
-        results = new ShaderResult[_springs.Count()];
         staticIndecies.CopyFrom(_staticIndecies.ToArray());
         for (int i = 0; i < nativeResults.Length; i++)
         {
 
-            nativeResults[i] = new NativeArray<ShaderResult>(springs.Length, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+            nativeResults[i] = new NativeArray<ShaderResult>(points.Count, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
         }
         // AddLine(points.ToArray(), positions);
         GameObject m = new GameObject("dynamic mesh");
         dynamicMesh = m.AddComponent<dynamic_mesh>();
-        dynamicMesh.cols = width * density;
-        dynamicMesh.rows = height * density;
+        dynamicMesh.cols = widthOffset * 2;
+        dynamicMesh.rows = heightOffset * 2;
         dynamicMesh.mat = meshMaterial;
         dynamicMesh.positions = positions;
 
         for (int i = 0; i < points.Count(); i++)
         {
-            GameObject point = points[i];
-            mesh_point pointComp = point.GetComponent<mesh_point>();
-            pointComp.positions = positions;
-            pointComp.velocities = pointVelocities;
-            positions[i] = point.transform.position;
+            Vector2 point = points[i];
+            positions[i] = point;
 
             PersistentPointInfo shaderInfo = new();
-            shaderInfo.InitialPosition = point.transform.position;
+            shaderInfo.Init();
+            shaderInfo.InitialPosition = point;
             persistentPointInfoBufferArray[i] = shaderInfo;
         }
 
         for (int i = 0; i < springs.Length; i++)
         {
-            SpringShaderInfo shaderInfo = new();
+            SpringShaderInfo springShaderInfo = new();
             Spring spring = springs[i];
-            shaderInfo.firstPointIndex = spring.firstObjIndex;
-            shaderInfo.secondPointIndex = spring.secondObjIndex;
-            shaderInfo.initialDistance = spring.initialLength;
-            springInfoBufferArray[i] = shaderInfo;
+            springShaderInfo.firstPointIndex = spring.firstObjIndex;
+            springShaderInfo.secondPointIndex = spring.secondObjIndex;
+            springShaderInfo.initialDistance = spring.initialLength;
+            var p1 = persistentPointInfoBufferArray[spring.firstObjIndex];
+            p1.AddSpring(i);
+            persistentPointInfoBufferArray[spring.firstObjIndex] = p1;
+            PersistentPointInfo p2 = persistentPointInfoBufferArray[spring.secondObjIndex];
+            p2.AddSpring(i);
+            persistentPointInfoBufferArray[spring.secondObjIndex] = p2;
+            springInfoBufferArray[i] = springShaderInfo;
         }
         int kernel = springComputeShader.FindKernel("CSMain");
         SpringInfoBuffer.SetData(springInfoBufferArray);
         persistentPointInfoBuffer.SetData(persistentPointInfoBufferArray);
         springComputeShader.SetBuffer(kernel, "persistentPointInfo", persistentPointInfoBuffer);
         springComputeShader.SetBuffer(kernel, "springInfos", SpringInfoBuffer);
-        transformAccessArray = new TransformAccessArray(pointTransforms.ToArray());
+        Debug.Log(springInfoBufferArray[1].firstPointIndex);
     }
 
 
@@ -345,16 +332,16 @@ public class spring_mesh : MonoBehaviour
 
         springComputeShader.SetBuffer(kernel, "points", pointInfoBuffer);
         springComputeShader.SetBuffer(kernel, "results", resultBuffer);
-        springComputeShader.SetInt("pairCount", springs.Length);
+        springComputeShader.SetInt("pairCount", points.Count);
         springComputeShader.SetFloat("springConstant", springConstant);
         springComputeShader.SetFloat("damping", dampingForce);
         springComputeShader.SetFloat("returnForce", returnForce);
         springComputeShader.SetFloat("maxReturnDistance", maxReturnDistance);
         springComputeShader.SetFloat("minimumGate", minVelocityGate * 10);
-        springComputeShader.SetFloat("deltaTime", Time.deltaTime);
+        springComputeShader.SetFloat("deltaTime", Mathf.Min(Time.deltaTime, 0.05f));
 
         int threadsPerGroup = 256;
-        int groups = Mathf.CeilToInt(springs.Length / (float)threadsPerGroup);
+        int groups = Mathf.CeilToInt(points.Count / (float)threadsPerGroup);
         Profiler.EndSample();
         Profiler.BeginSample("dispatch");
 
@@ -378,6 +365,12 @@ public class spring_mesh : MonoBehaviour
         Profiler.BeginSample("result get");
         dynamicMesh.UpdateMesh();
         req.WaitForCompletion();
+        // NativeArray<ShaderResult> res = nativeResults[usedIndex];
+        // List<Vector2> vels = new();
+        // foreach (ShaderResult r in res) vels.Add(r.firstVelocity);
+        // Debug.Log($"[{string.Join(", ", vels)}]");
+        // Debug.Log(res.Length);
+        // Debug.Log(pointVelocities.Length);
         // nativeResults[usedIndex].CopyFrom(results);
         Profiler.EndSample();
 
@@ -386,10 +379,9 @@ public class spring_mesh : MonoBehaviour
         {
             pointsVelocities = pointVelocities,
             results = nativeResults[usedIndex],
-            springs = springs,
-            DeltaTime = Time.deltaTime
         };
-        JobHandle handle = job.Schedule(springs.Length, 64);
+        // Debug.Log("here");
+        JobHandle handle = job.Schedule(points.Count, 256);
         handle.Complete();
 
         // for (int i = 0; i < springs.Length; i++)
@@ -403,17 +395,6 @@ public class spring_mesh : MonoBehaviour
         // }
         Profiler.EndSample();
         UpdateHashMap();
-    }
-
-    [BurstCompile]
-    private struct FechPositionsJob : IJobParallelForTransform
-    {
-        public NativeArray<Vector2> positions;
-        public void Execute(int index, TransformAccess transform)
-        {
-            positions[index] = new Vector3(transform.position.x, transform.position.y, 0);
-        }
-
     }
 
     [BurstCompile]
@@ -483,17 +464,11 @@ public class spring_mesh : MonoBehaviour
         public NativeArray<Vector2> pointsVelocities;
         [ReadOnly]
         public NativeArray<ShaderResult> results;
-        [ReadOnly]
-        public NativeArray<Spring> springs;
-
-        public float DeltaTime;
 
         public void Execute(int index)
         {
-            var spring = springs[index];
             ShaderResult result = results[index];
-            pointsVelocities[spring.firstObjIndex] += result.firstVelocity;
-            pointsVelocities[spring.secondObjIndex] += result.secondVelocity;
+            pointsVelocities[index] += result.firstVelocity;
         }
     }
 
@@ -512,11 +487,6 @@ public class spring_mesh : MonoBehaviour
         Profiler.EndSample();
     }
 
-    public List<Transform> GetPoints()
-    {
-        return pointTransforms;
-    }
-
     public ref NativeArray<Vector2> GetVelocities()
     {
         return ref pointVelocities;
@@ -527,35 +497,4 @@ public class spring_mesh : MonoBehaviour
         return ref positions;
     }
 
-
-    private void AddLine(GameObject[] points, NativeArray<Vector2> positions)
-    {
-        // Add a LineRenderer component
-        GameObject renderer = new GameObject("linerenderer");
-        renderer.transform.parent = gameObject.transform;
-        LineRenderer lineRenderer = renderer.AddComponent<LineRenderer>();
-
-        // Set the material
-        lineRenderer.material = new Material(Resources.Load("test_sprite") as Material);//Shader.Find("Sprites/Default"));
-        // lineRenderer.materials = new Material[] {Resources.Load("Assets/scripts/test.png") as Sprite};
-
-        // Set the color
-        lineRenderer.startColor = new Color(0, 59 / 255, 1, 0.6f);
-        lineRenderer.endColor = new Color(0, 59 / 255, 1, 0.6f);
-
-        // Set the width
-        lineRenderer.startWidth = 0.03f;
-        lineRenderer.endWidth = 0.03f;
-
-        // Set the number of vertices
-        lineRenderer.positionCount = points.Length;
-
-        Line line = new Line(points, positions, lineRenderer);
-        lines.Add(line);
-    }
-
-    public float GetConstant()
-    {
-        return springConstant;
-    }
 }

@@ -24,7 +24,6 @@ public class dynamic_mesh : MonoBehaviour
     // Assume this is filled each frame by your job/compute shader
     public NativeArray<Vector3> positions;
 
-    NativeArray<Vector3> output;
     GraphicsBuffer uploadBuffer;
     GraphicsBuffer vertexBuffer;
 
@@ -52,10 +51,10 @@ public class dynamic_mesh : MonoBehaviour
 
 
         BuildIndices(); // only once
-        output = new NativeArray<Vector3>(positions.Length, Allocator.Persistent);
-        mesh.vertices = positions.ToArray();
+        mesh.SetVertices(positions);
         mesh.SetIndices(indices, MeshTopology.Lines, 0);
-        uploadBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Vertex | GraphicsBuffer.Target.CopySource, GraphicsBuffer.UsageFlags.LockBufferForWrite, positions.Length, sizeof(float) * 3);
+        Debug.Log($"positions: {positions.Length}, rows: {rows}, cols: {cols}");
+        uploadBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Vertex | GraphicsBuffer.Target.CopySource, GraphicsBuffer.UsageFlags.LockBufferForWrite, mesh.vertices.Length, sizeof(float) * 3);
         mesh.vertexBufferTarget |= GraphicsBuffer.Target.CopyDestination;
         vertexBuffer = mesh.GetVertexBuffer(0);
     }
@@ -102,7 +101,6 @@ public class dynamic_mesh : MonoBehaviour
         Profiler.BeginSample("setting data");
         NativeArray<Vector3> mapped = uploadBuffer.LockBufferForWrite<Vector3>(0, positions.Length);
         mapped.CopyFrom(positions);
-        // mesh.RecalculateBounds();
         uploadBuffer.UnlockBufferAfterWrite<Vector3>(positions.Length);
         Graphics.CopyBuffer(uploadBuffer, vertexBuffer);
         Profiler.EndSample();
@@ -112,28 +110,4 @@ public class dynamic_mesh : MonoBehaviour
         // renderer.material.color = color;
     }
 
-    [BurstCompile]
-    NativeArray<Vector3> Vector2To3(NativeArray<Vector2> vecs)
-    {
-        for (int i = 0; i < vecs.Length; i++)
-            output[i] = vecs[i];
-        return output;
-    }
-
-
-    [BurstCompile]
-    private struct Expand2To3Job : IJobParallelFor
-    {
-        [ReadOnly] public NativeArray<Vector2> In2;
-        public NativeArray<Vector3> Out3; // mapped upload buffer
-        public void Execute(int i)
-        {
-            var p = In2[i];
-            Out3[i] = new Vector3(p.x, p.y, 0f);
-        }
-    }
-    // void FixedUpdate()
-    // {
-    //     BuildIndices();
-    // }
 }
