@@ -19,21 +19,32 @@ public class impulse : MonoBehaviour
 
     private float current_time;
 
-    private spring_mesh springMesh;
+    private SpringMesh springMesh;
 
     private Vector2 prevPos = new Vector2(float.NaN, float.NaN);
+
+    private ComputeShader shader;
 
 
     // Start is called once before the first execution of Update after the MonoBehaviour is created
     void Start()
     {
-        springMesh = FindFirstObjectByType<spring_mesh>();
+        springMesh = FindFirstObjectByType<SpringMesh>();
+        shader = springMesh.GetShader();
+        shader.SetVector("_mousePosition", Vector2.zero);
+        shader.SetFloat("mousePushForce", 0);
+        shader.SetFloat("mouseCutoff", cutoff);
+        shader.SetVector("_mouseVector", Vector2.zero);
+
     }
 
     // Update is called once per frame
     void Update()
     {
         Vector2 mousePosition = Camera.main.ScreenToWorldPoint(Input.mousePosition);
+        Vector2 mouseVector = (mousePosition - prevPos).normalized;
+        shader.SetFloat("mouseCutoff", cutoff);
+        shader.SetVector("_mousePosition", (Vector4)mousePosition);
         if (Input.GetMouseButton(0) || Input.GetMouseButton(1))
         {
             current_time = math.max(current_time + Time.fixedDeltaTime, 0.1f);
@@ -75,36 +86,47 @@ public class impulse : MonoBehaviour
             //     }
             //     point.GetComponent<mesh_point>().AddVelocity(impulse * direction);
             // }
-            Profiler.BeginSample("query");
-            List<int> indecies = springMesh.spatialHash.Query(target, cutoff, positions);
-            NativeArray<int> indeciesArr = new(indecies.Count, Allocator.TempJob);
-            for (int i = 0; i < indecies.Count; i++)
+
+
+            // Profiler.BeginSample("query");
+            // List<int> indecies = springMesh.spatialHash.Query(target, cutoff, positions);
+            // NativeArray<int> indeciesArr = new(indecies.Count, Allocator.TempJob);
+            // for (int i = 0; i < indecies.Count; i++)
+            // {
+            //     indeciesArr[i] = indecies[i];
+            // }
+            // Profiler.EndSample();
+            // Profiler.BeginSample("impulse change velocities");
+
+            // new ApplyForces
+            // {
+            //     positions = positions,
+            //     velocities = velocities,
+            //     indecies = indeciesArr,
+            //     impulseStrength = impulseStrength,
+            //     mousePosition = mousePosition,
+            //     mouseVector = mouseVector,
+            //     mouseButton1 = Input.GetMouseButton(1),
+            //     deltaTime = Time.deltaTime,
+            // }.Schedule(indeciesArr.Length, 64).Complete();
+
+            // indeciesArr.Dispose();
+
+            // Profiler.EndSample();
+            float currentForce = impulseStrength;
+            if (Input.GetMouseButton(1))
             {
-                indeciesArr[i] = indecies[i];
+                currentForce = -currentForce;
+                // because the force is negative
+                mouseVector = -mouseVector;
             }
-            Profiler.EndSample();
-            Profiler.BeginSample("impulse change velocities");
-            Vector2 mouseVector = (mousePosition - prevPos).normalized;
-
-            new ApplyForces
-            {
-                positions = positions,
-                velocities = velocities,
-                indecies = indeciesArr,
-                impulseStrength = impulseStrength,
-                mousePosition = mousePosition,
-                mouseVector = mouseVector,
-                mouseButton1 = Input.GetMouseButton(1),
-                deltaTime = Time.deltaTime,
-            }.Schedule(indeciesArr.Length, 64).Complete();
-
-            indeciesArr.Dispose();
-
-            Profiler.EndSample();
+            shader.SetFloat("mousePushForce", currentForce);
+            shader.SetVector("_mouseVector", mouseVector);
         }
         else
         {
             current_time = 0;
+            shader.SetFloat("mousePushForce", 0);
         }
         prevPos = mousePosition;
     }

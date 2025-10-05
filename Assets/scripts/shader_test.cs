@@ -6,7 +6,7 @@ using Unity.Collections;
 public class QuadDensityRenderer : MonoBehaviour
 {
     [Header("Inputs")]
-    public spring_mesh positionsProvider; // your script that exposes getPositions()
+    public SpringMesh positionsProvider; // your script that exposes getPositions()
 
     [Header("Compute")]
     public ComputeShader densityCS;

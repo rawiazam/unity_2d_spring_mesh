@@ -6,13 +6,14 @@ using Unity.Burst;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Jobs;
+using Unity.Mathematics;
 using UnityEngine;
 using UnityEngine.Jobs;
 using UnityEngine.Profiling;
 using UnityEngine.Rendering;
 
 
-public class spring_mesh : MonoBehaviour
+public class SpringMesh : MonoBehaviour
 {
 
     [StructLayout(LayoutKind.Sequential)]
@@ -259,6 +260,9 @@ public class spring_mesh : MonoBehaviour
         persistentPointInfoBuffer.SetData(persistentPointInfoBufferArray);
         springComputeShader.SetBuffer(kernel, "persistentPointInfo", persistentPointInfoBuffer);
         springComputeShader.SetBuffer(kernel, "springInfos", SpringInfoBuffer);
+        springComputeShader.SetBuffer(kernel, "points", pointInfoBuffer);
+        springComputeShader.SetBuffer(kernel, "results", resultBuffer);
+        springComputeShader.SetInt("pairCount", points.Count);
         Debug.Log(springInfoBufferArray[1].firstPointIndex);
     }
 
@@ -330,9 +334,6 @@ public class spring_mesh : MonoBehaviour
 
         int kernel = springComputeShader.FindKernel("CSMain");
 
-        springComputeShader.SetBuffer(kernel, "points", pointInfoBuffer);
-        springComputeShader.SetBuffer(kernel, "results", resultBuffer);
-        springComputeShader.SetInt("pairCount", points.Count);
         springComputeShader.SetFloat("springConstant", springConstant);
         springComputeShader.SetFloat("damping", dampingForce);
         springComputeShader.SetFloat("returnForce", returnForce);
@@ -394,7 +395,7 @@ public class spring_mesh : MonoBehaviour
         // spring.secondPoint.AddVelocity(result.secondVelocity * Time.fixedDeltaTime);
         // }
         Profiler.EndSample();
-        UpdateHashMap();
+        // UpdateHashMap();
     }
 
     [BurstCompile]
@@ -418,7 +419,7 @@ public class spring_mesh : MonoBehaviour
             Vector2 velocity = pointVelocities[index];
             velocity = Vector2.ClampMagnitude(velocity, 16);
 
-            Vector2 newPos = objPosition + velocity * Mathf.Min(deltaTime, 0.025f);
+            Vector2 newPos = objPosition + velocity * math.min(deltaTime, 0.025f);
             // transform.position = newPos;
             if (velocity.magnitude < 0.003f)
             {
@@ -495,6 +496,11 @@ public class spring_mesh : MonoBehaviour
     public ref NativeArray<Vector3> GetPositions()
     {
         return ref positions;
+    }
+
+    public ref ComputeShader GetShader()
+    {
+        return ref springComputeShader;
     }
 
 }

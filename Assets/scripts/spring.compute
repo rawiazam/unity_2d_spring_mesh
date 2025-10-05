@@ -30,6 +30,10 @@ StructuredBuffer<Point> points;
 StructuredBuffer<PersistentPointInfo> persistentPointInfo;
 StructuredBuffer<SpringInfos> springInfos;
 RWStructuredBuffer<Result> results;
+float4 _mousePosition;
+float4 _mouseVector;
+float mousePushForce;
+float mouseCutoff;
 uint pairCount;
 float springConstant;
 float damping;
@@ -44,6 +48,8 @@ float deltaTime;
 
 [numthreads(256, 1, 1)] void CSMain(uint3 id : SV_DispatchThreadID)
 {
+    float2 mousePosition = _mousePosition.xy;
+    float2 mouseVector = _mouseVector.xy;
     uint idx = id.x;
     if (idx >= pairCount)
         return;
@@ -93,6 +99,13 @@ float deltaTime;
 
         if (length(firstFinalVelocity) < minimumGate)
             firstFinalVelocity = firstFinalVelocity * (0.3 - 0.3 *(minimumGate - length(firstFinalVelocity)) / minimumGate) - firstVelocity * 0.5;
+
+        float mouseDist = distance(mousePosition, first);        
+        if (mouseDist < mouseCutoff && mouseDist > 0.001)
+        {
+            float2 direction = normalize(first - mousePosition + mouseVector);
+            firstFinalVelocity += mousePushForce / mouseDist * direction;
+        }
 
         results[firstIndex].firstVelocity += firstFinalVelocity * deltaTime;
     }
