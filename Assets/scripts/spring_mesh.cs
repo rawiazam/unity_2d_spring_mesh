@@ -100,7 +100,8 @@ public class SpringMesh : MonoBehaviour
     private List<Spring> _springs = new List<Spring>();
     private NativeArray<Spring> springs;
     private List<Vector2> points = new List<Vector2>();
-    private NativeArray<Vector3> positions = new();
+    private NativeArray<Vector3> positions;
+    private NativeArray<Vector2> initialPositions;
     private NativeArray<bool> staticIndecies;
     private List<bool> _staticIndecies = new();
 
@@ -130,7 +131,8 @@ public class SpringMesh : MonoBehaviour
         springs.Dispose();
         pointVelocities.Dispose();
         shaderInput.Dispose();
-        // nativeResults.Dispose();
+        foreach (NativeArray<ShaderResult> res in nativeResults)
+            res.Dispose();
     }
     // Start is called once before the first execution of Update after the MonoBehaviour is created
     void Start()
@@ -420,7 +422,6 @@ public class SpringMesh : MonoBehaviour
             velocity = Vector2.ClampMagnitude(velocity, 16);
 
             Vector2 newPos = objPosition + velocity * math.min(deltaTime, 0.025f);
-            // transform.position = newPos;
             if (velocity.magnitude < 0.003f)
             {
                 velocity = Vector2.zero;

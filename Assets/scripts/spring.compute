@@ -94,7 +94,7 @@ float deltaTime;
         if (firstOriginDistance < maxReturnDistance && firstOriginDistance > 0.1)
         {
             float2 direction = normalize(firstOrigin - first);
-            firstFinalVelocity += direction * returnForce * firstOriginDistance - firstVelocity * damping;
+            firstFinalVelocity += direction * returnForce * firstOriginDistance;
         }
 
         if (length(firstFinalVelocity) < minimumGate)
@@ -103,7 +103,7 @@ float deltaTime;
         float mouseDist = distance(mousePosition, first);        
         if (mouseDist < mouseCutoff && mouseDist > 0.001)
         {
-            float2 direction = normalize(first - mousePosition + mouseVector);
+            float2 direction = normalize(normalize(first - mousePosition) + mouseVector);
             firstFinalVelocity += mousePushForce / mouseDist * direction;
         }
 

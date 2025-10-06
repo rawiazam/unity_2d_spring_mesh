@@ -117,8 +117,8 @@ public class impulse : MonoBehaviour
             if (Input.GetMouseButton(1))
             {
                 currentForce = -currentForce;
-                // because the force is negative
-                mouseVector = -mouseVector;
+                // it doesn't give the intended effect (neighbours moving together)
+                mouseVector = Vector2.zero;
             }
             shader.SetFloat("mousePushForce", currentForce);
             shader.SetVector("_mouseVector", mouseVector);
