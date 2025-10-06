@@ -23,7 +23,7 @@ struct PersistentPointInfo
 
 struct Result
 {
-    float2 firstVelocity;
+    float2 velocity;
 };
 
 StructuredBuffer<Point> points;
@@ -34,7 +34,7 @@ float4 _mousePosition;
 float4 _mouseVector;
 float mousePushForce;
 float mouseCutoff;
-uint pairCount;
+uint pointCount;
 float springConstant;
 float damping;
 float returnForce;
@@ -51,14 +51,14 @@ float deltaTime;
     float2 mousePosition = _mousePosition.xy;
     float2 mouseVector = _mouseVector.xy;
     uint idx = id.x;
-    if (idx >= pairCount)
+    if (idx >= pointCount)
         return;
     int firstIndex = idx;
     float2 first = points[firstIndex].position;
     float2 firstOrigin = persistentPointInfo[firstIndex].initialPosition;
-    float2 firstVelocity = points[firstIndex].velocity;
+    float2 velocity = points[firstIndex].velocity;
     Result initRes;
-    initRes.firstVelocity = 0;
+    initRes.velocity = 0;
     results[firstIndex] = initRes;
     for (int i = 0; i < SPRING_COUNT; i++)
     {
@@ -76,11 +76,11 @@ float deltaTime;
         float dist = distance(first, second);
 
         float2 secondFinalVelocity;
-        float2 firstFinalVelocity;
+        float2 finalVelocity;
 
         if (dist < minDistance) // abs(dist - minDistance) < 0.1)
         {
-            firstFinalVelocity = float2(0, 0);
+            finalVelocity = float2(0, 0);
             secondFinalVelocity = float2(0, 0);
         }
         else
@@ -88,25 +88,25 @@ float deltaTime;
             float force = (dist - minDistance) * springConstant;
             // if (dist < minDistance) force = -force;
             float2 direction = normalize(second - first);
-            firstFinalVelocity = direction * force - firstVelocity * damping;
+            finalVelocity = direction * force - velocity * damping;
         }
         float firstOriginDistance = distance(first, firstOrigin);
         if (firstOriginDistance < maxReturnDistance && firstOriginDistance > 0.1)
         {
             float2 direction = normalize(firstOrigin - first);
-            firstFinalVelocity += direction * returnForce * firstOriginDistance;
+            finalVelocity += direction * returnForce * firstOriginDistance;
         }
 
-        if (length(firstFinalVelocity) < minimumGate)
-            firstFinalVelocity = firstFinalVelocity * (0.3 - 0.3 *(minimumGate - length(firstFinalVelocity)) / minimumGate) - firstVelocity * 0.5;
+        if (length(finalVelocity) < minimumGate)
+            finalVelocity = finalVelocity * (0.3 - 0.3 * (minimumGate - length(finalVelocity)) / minimumGate) - velocity * 0.5;
 
-        float mouseDist = distance(mousePosition, first);        
+        float mouseDist = distance(mousePosition, first);
         if (mouseDist < mouseCutoff && mouseDist > 0.001)
         {
             float2 direction = normalize(normalize(first - mousePosition) + mouseVector);
-            firstFinalVelocity += mousePushForce / mouseDist * direction;
+            finalVelocity += mousePushForce / mouseDist * direction;
         }
 
-        results[firstIndex].firstVelocity += firstFinalVelocity * deltaTime;
+        results[firstIndex].velocity += finalVelocity * deltaTime;
     }
 }

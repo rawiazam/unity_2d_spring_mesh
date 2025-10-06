@@ -92,22 +92,12 @@ public class dynamic_mesh : MonoBehaviour
     {
         if (!positions.IsCreated) return;
 
-        // mesh.Clear();
-        //mesh.vertices = Vector2To3(positions).ToArray();//positions.Select(v => (Vector3)v).ToArray();
-        // mesh.SetVertexBufferData(Vector2To3(positions), 0, 0, positions.Length, 0);
-        Profiler.BeginSample("translating to vector3");
-        // new Expand2To3Job { In2 = positions, Out3 = output }.Schedule(positions.Length, 256).Complete();
-        Profiler.EndSample();
-        Profiler.BeginSample("setting data");
+        Profiler.BeginSample("setting mesh data");
         NativeArray<Vector3> mapped = uploadBuffer.LockBufferForWrite<Vector3>(0, positions.Length);
         mapped.CopyFrom(positions);
         uploadBuffer.UnlockBufferAfterWrite<Vector3>(positions.Length);
         Graphics.CopyBuffer(uploadBuffer, vertexBuffer);
         Profiler.EndSample();
-        // Built-in Unlit/Color works in most pipelines
-        // renderer.material = new Material(Shader.Find("Unlit/Color"));
-        // Renderer renderer = GetComponent<Renderer>();
-        // renderer.material.color = color;
     }
 
 }

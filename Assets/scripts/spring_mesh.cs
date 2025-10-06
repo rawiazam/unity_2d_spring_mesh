@@ -80,6 +80,7 @@ public class SpringMesh : MonoBehaviour
             springIndecies[currentIndex] = index;
         }
     }
+    // ----- Inspector / config -----
     public int density;
     public int width;
     public int height;
@@ -96,44 +97,56 @@ public class SpringMesh : MonoBehaviour
     public float minVelocityGate;
     public SpatialHash2D spatialHash;
 
+    // ----- Internals -----
     private GameObject meshOrigin;
-    private List<Spring> _springs = new List<Spring>();
+    private readonly List<Spring> _springs = new List<Spring>();
     private NativeArray<Spring> springs;
-    private List<Vector2> points = new List<Vector2>();
+
+    private readonly List<Vector2> points = new List<Vector2>();
     private NativeArray<Vector3> positions;
-    private NativeArray<Vector2> initialPositions;
+
     private NativeArray<bool> staticIndecies;
-    private List<bool> _staticIndecies = new();
+    private readonly List<bool> _staticIndecies = new List<bool>();
 
     private NativeArray<ShaderResult>[] nativeResults = new NativeArray<ShaderResult>[20];
     private uint currentNativeArrayIndex;
 
-
-    NativeArray<ShaderInput> shaderInput;
-    ComputeBuffer pointInfoBuffer;
-    ComputeBuffer SpringInfoBuffer;
-    NativeArray<SpringShaderInfo> springInfoBufferArray;
-    ComputeBuffer persistentPointInfoBuffer;
-    NativeArray<PersistentPointInfo> persistentPointInfoBufferArray;
-    ComputeBuffer resultBuffer;
+    private NativeArray<ShaderInput> shaderInput;
+    private ComputeBuffer pointInfoBuffer;
+    private ComputeBuffer SpringInfoBuffer;
+    private NativeArray<SpringShaderInfo> springInfoBufferArray;
+    private ComputeBuffer persistentPointInfoBuffer;
+    private NativeArray<PersistentPointInfo> persistentPointInfoBufferArray;
+    private ComputeBuffer resultBuffer;
 
     private JobHandle updateHashMapJob = default;
 
     private dynamic_mesh dynamicMesh;
 
+    private const int ThreadGroupSize = 256;
+
     void OnDestroy()
     {
-        pointInfoBuffer.Release();
-        resultBuffer.Release();
-        SpringInfoBuffer.Release();
-        persistentPointInfoBuffer.Release();
-        positions.Dispose();
-        springs.Dispose();
-        pointVelocities.Dispose();
-        shaderInput.Dispose();
-        foreach (NativeArray<ShaderResult> res in nativeResults)
-            res.Dispose();
+        try { pointInfoBuffer?.Release(); } catch { }
+        try { resultBuffer?.Release(); } catch { }
+        try { SpringInfoBuffer?.Release(); } catch { }
+        try { persistentPointInfoBuffer?.Release(); } catch { }
+
+        if (positions.IsCreated) positions.Dispose();
+        if (springs.IsCreated) springs.Dispose();
+        if (pointVelocities.IsCreated) pointVelocities.Dispose();
+        if (shaderInput.IsCreated) shaderInput.Dispose();
+        if (staticIndecies.IsCreated) staticIndecies.Dispose();
+        if (springInfoBufferArray.IsCreated) springInfoBufferArray.Dispose();
+        if (persistentPointInfoBufferArray.IsCreated) persistentPointInfoBufferArray.Dispose();
+
+        if (nativeResults != null)
+        {
+            for (int i = 0; i < nativeResults.Length; i++)
+                if (nativeResults[i].IsCreated) nativeResults[i].Dispose();
+        }
     }
+
     // Start is called once before the first execution of Update after the MonoBehaviour is created
     void Start()
     {
@@ -141,27 +154,16 @@ public class SpringMesh : MonoBehaviour
         meshOrigin.transform.position = new Vector2(0, 0);
         int widthOffset = (int)(width * density / 2.0);
         int heightOffset = (int)(height * density / 2.0);
-        int currentIndex = 0;
         Vector2 currentPosition = (Vector2)gameObject.transform.position;
         for (int i = -heightOffset; i < heightOffset; i++)
         {
             for (int j = -widthOffset; j < widthOffset; j++)
             {
                 Vector2 meshOffset = new Vector2(j / (float)density, i / (float)density) + currentPosition;
-                // GameObject point = new GameObject($"meshPoint{points.Count}");
-                // point.transform.parent = meshOrigin.transform;
-                // point.transform.position = meshOrigin.transform.position + (Vector3)meshOffset;
-                // mesh_point pointComponent = point.AddComponent<mesh_point>();
-                // point.AddComponent<SpriteRenderer>();
-                // point.GetComponent<SpriteRenderer>().sprite = target_sprite;
-                // point.GetComponent<SpriteRenderer>().sortingOrder = 2;
-                // point.GetComponent<SpriteRenderer>().color = new Color(0, 115 / 255, 255f / 255, 0.8f);
-                //point.transform.localScale = new Vector3(0.3f, 0.3f, 0.3f);
 
                 if (j == -widthOffset || i == -heightOffset || j == widthOffset - 1 || i == heightOffset - 1)
                 {
                     _staticIndecies.Add(true);
-                    // point.GetComponent<mesh_point>().isStatic = true;
                 }
                 else
                 {
@@ -177,53 +179,46 @@ public class SpringMesh : MonoBehaviour
                     int previousOffset = (i - 1 + heightOffset) * widthOffset * 2 + j + widthOffset;
                     _springs.Add(new Spring(meshOffset, points[previousOffset], points.Count(), previousOffset));
                 }
-                currentIndex++;
+
                 points.Add(meshOffset);
             }
-            // AddLine(points.GetRange(points.Count - widthOffset * 2, widthOffset * 2).ToArray());
         }
         for (int row = 1; row < heightOffset * 2; row++)
         {
             for (int col = 1; col < widthOffset * 2 - 1; col++)
             {
-                int firstIndex = row * widthOffset * 2 + col;
-                int secondIndex = (row - 1) * widthOffset * 2 + col - 1;
-                int thirdIndex = (row - 1) * widthOffset * 2 + col + 1;
-                _springs.Add(new Spring(points[firstIndex], points[secondIndex], firstIndex, secondIndex));
-                _springs.Add(new Spring(points[firstIndex], points[thirdIndex], firstIndex, thirdIndex));
+                int currPoint = row * widthOffset * 2 + col;
+                int upLeft = (row - 1) * widthOffset * 2 + col - 1;
+                int upRight = (row - 1) * widthOffset * 2 + col + 1;
+                _springs.Add(new Spring(points[currPoint], points[upLeft], currPoint, upLeft));
+                _springs.Add(new Spring(points[currPoint], points[upRight], currPoint, upRight));
             }
         }
-        // for (int i = 0; i < widthOffset * 2; i++)
-        // {
-        //     for (int j = 0; j < heightOffset * 2; j++)
-        //     {
-        //         columns.Add(points[i + j * widthOffset * 2]);
-        //     }
-        //     AddLine(columns.GetRange(columns.Count - heightOffset * 2, heightOffset * 2).ToArray());
-        // }
         Debug.Log($"point amount: {points.Count}");
         Debug.Log($"spring amount: {_springs.Count}");
 
-        springs = new NativeArray<Spring>(_springs.Count(), Allocator.Persistent);
-        for (int i = 0; i < _springs.Count(); i++) springs[i] = _springs[i];
-        pointInfoBuffer = new ComputeBuffer(springs.Length, Marshal.SizeOf(typeof(ShaderInput)));
-        persistentPointInfoBuffer = new ComputeBuffer(points.Count, Marshal.SizeOf(typeof(PersistentPointInfo)));
-        persistentPointInfoBufferArray = new NativeArray<PersistentPointInfo>(points.Count, Allocator.Persistent);
-        SpringInfoBuffer = new ComputeBuffer(_springs.Count, Marshal.SizeOf(typeof(SpringShaderInfo)));
-        springInfoBufferArray = new NativeArray<SpringShaderInfo>(_springs.Count, Allocator.Persistent);
-        resultBuffer = new ComputeBuffer(points.Count, Marshal.SizeOf(typeof(ShaderResult)));
-        shaderInput = new NativeArray<ShaderInput>(points.Count(), Allocator.Persistent);
-        positions = new NativeArray<Vector3>(points.Count(), Allocator.Persistent);
-        pointVelocities = new NativeArray<Vector2>(points.Count(), Allocator.Persistent);
-        spatialHash = new SpatialHash2D(points.Count, 1);
+        // Allocate persistent native data
+        springs = new NativeArray<Spring>(_springs.Count, Allocator.Persistent);
+        springs.CopyFrom(_springs.ToArray());
+
+        shaderInput = new NativeArray<ShaderInput>(points.Count, Allocator.Persistent);
+        positions = new NativeArray<Vector3>(points.Count, Allocator.Persistent);
+        pointVelocities = new NativeArray<Vector2>(points.Count, Allocator.Persistent);
         staticIndecies = new NativeArray<bool>(points.Count, Allocator.Persistent);
         staticIndecies.CopyFrom(_staticIndecies.ToArray());
-        for (int i = 0; i < nativeResults.Length; i++)
-        {
+        spatialHash = new SpatialHash2D(points.Count, 1);
 
+        // Buffers
+        pointInfoBuffer = new ComputeBuffer(points.Count, Marshal.SizeOf(typeof(ShaderInput)));
+        persistentPointInfoBuffer = new ComputeBuffer(points.Count, Marshal.SizeOf(typeof(PersistentPointInfo)));
+        SpringInfoBuffer = new ComputeBuffer(_springs.Count, Marshal.SizeOf(typeof(SpringShaderInfo)));
+        resultBuffer = new ComputeBuffer(points.Count, Marshal.SizeOf(typeof(ShaderResult)));
+        springInfoBufferArray = new NativeArray<SpringShaderInfo>(_springs.Count, Allocator.Persistent);
+        persistentPointInfoBufferArray = new NativeArray<PersistentPointInfo>(points.Count, Allocator.Persistent);
+
+        for (int i = 0; i < nativeResults.Length; i++)
             nativeResults[i] = new NativeArray<ShaderResult>(points.Count, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
-        }
-        // AddLine(points.ToArray(), positions);
+
         GameObject m = new GameObject("dynamic mesh");
         dynamicMesh = m.AddComponent<dynamic_mesh>();
         dynamicMesh.cols = widthOffset * 2;
@@ -244,19 +239,25 @@ public class SpringMesh : MonoBehaviour
 
         for (int i = 0; i < springs.Length; i++)
         {
-            SpringShaderInfo springShaderInfo = new();
             Spring spring = springs[i];
-            springShaderInfo.firstPointIndex = spring.firstObjIndex;
-            springShaderInfo.secondPointIndex = spring.secondObjIndex;
-            springShaderInfo.initialDistance = spring.initialLength;
-            var p1 = persistentPointInfoBufferArray[spring.firstObjIndex];
+            SpringShaderInfo springShaderInfo = new SpringShaderInfo
+            {
+                firstPointIndex = spring.firstObjIndex,
+                secondPointIndex = spring.secondObjIndex,
+                initialDistance = spring.initialLength
+            };
+            springInfoBufferArray[i] = springShaderInfo;
+
+            PersistentPointInfo p1 = persistentPointInfoBufferArray[spring.firstObjIndex];
             p1.AddSpring(i);
             persistentPointInfoBufferArray[spring.firstObjIndex] = p1;
+
             PersistentPointInfo p2 = persistentPointInfoBufferArray[spring.secondObjIndex];
             p2.AddSpring(i);
             persistentPointInfoBufferArray[spring.secondObjIndex] = p2;
-            springInfoBufferArray[i] = springShaderInfo;
         }
+
+        // Setting up buffer vars
         int kernel = springComputeShader.FindKernel("CSMain");
         SpringInfoBuffer.SetData(springInfoBufferArray);
         persistentPointInfoBuffer.SetData(persistentPointInfoBufferArray);
@@ -264,8 +265,7 @@ public class SpringMesh : MonoBehaviour
         springComputeShader.SetBuffer(kernel, "springInfos", SpringInfoBuffer);
         springComputeShader.SetBuffer(kernel, "points", pointInfoBuffer);
         springComputeShader.SetBuffer(kernel, "results", resultBuffer);
-        springComputeShader.SetInt("pairCount", points.Count);
-        Debug.Log(springInfoBufferArray[1].firstPointIndex);
+        springComputeShader.SetInt("pointCount", points.Count);
     }
 
 
@@ -280,50 +280,20 @@ public class SpringMesh : MonoBehaviour
             fixedDeltaTime = Time.deltaTime,
             staticIndecies = staticIndecies,
         };
-        // var spatialJob = new BuildHashJob
-        // {
-        //     Hash = spatialHash.AsParallelWriter(),
-        //     Positions = positions
-        // };
 
-        JobHandle handle = job.Schedule(positions.Length, 254);//transformAccessArray);
+        JobHandle handle = job.Schedule(positions.Length, 254);
         handle.Complete();
         Profiler.EndSample();
-        // Profiler.BeginSample("spatial hash update");
-        // JobHandle spatialHandle = spatialJob.Schedule(positions.Length, 64);
-        // spatialHandle.Complete();
-        // Profiler.EndSample();
     }
 
     // Update is called once per frame
     void LateUpdate()
     {
-        // Profiler.BeginSample("fetch positions job");
-        // var job = new FechPositionsJob
-        // {
-        //     positions = positions
-        // };
-        // JobHandle handle = job.Schedule(transformAccessArray);
-        // handle.Complete();
-        // Profiler.EndSample();
-
-        Profiler.BeginSample("shaderinput struct");
-        // for (int i = 0; i < springs.Length; i++)
-        // {
-        //     ShaderInput shader = shaderInput[i];
-        //     Spring spring = springs[i];
-
-        //     shader.firstPoint = positions[spring.firstObjIndex];
-        //     shader.secondPoint = positions[spring.secondObjIndex];
-        //     shader.firstVelocity = pointVelocities[spring.firstObjIndex];
-        //     shader.secondVelocity = pointVelocities[spring.secondObjIndex];
-        //     shaderInput[i] = shader;
-        // }
+        Profiler.BeginSample("shaderinput struct saturation");
         var inputJob = new BuildShaderInputJob
         {
             pointVelocities = pointVelocities,
             positions = positions,
-            springs = springs,
             shaderInput = shaderInput
 
         };
@@ -343,8 +313,7 @@ public class SpringMesh : MonoBehaviour
         springComputeShader.SetFloat("minimumGate", minVelocityGate * 10);
         springComputeShader.SetFloat("deltaTime", Mathf.Min(Time.deltaTime, 0.05f));
 
-        int threadsPerGroup = 256;
-        int groups = Mathf.CeilToInt(points.Count / (float)threadsPerGroup);
+        int groups = Mathf.CeilToInt(points.Count / ThreadGroupSize);
         Profiler.EndSample();
         Profiler.BeginSample("dispatch");
 
@@ -368,6 +337,7 @@ public class SpringMesh : MonoBehaviour
         Profiler.BeginSample("result get");
         dynamicMesh.UpdateMesh();
         req.WaitForCompletion();
+        // debug loop
         // NativeArray<ShaderResult> res = nativeResults[usedIndex];
         // List<Vector2> vels = new();
         // foreach (ShaderResult r in res) vels.Add(r.firstVelocity);
@@ -383,19 +353,9 @@ public class SpringMesh : MonoBehaviour
             pointsVelocities = pointVelocities,
             results = nativeResults[usedIndex],
         };
-        // Debug.Log("here");
         JobHandle handle = job.Schedule(points.Count, 256);
         handle.Complete();
 
-        // for (int i = 0; i < springs.Length; i++)
-        // {
-        // Spring spring = springs[i];
-        // ShaderResult result = results[i];
-        // pointsVelocities[spring.firstObjIndex] += result.firstVelocity * Time.fixedDeltaTime;
-        // pointsVelocities[spring.secondObjIndex] += result.secondVelocity * Time.fixedDeltaTime;
-        // spring.firstPoint.AddVelocity(result.firstVelocity * Time.fixedDeltaTime);
-        // spring.secondPoint.AddVelocity(result.secondVelocity * Time.fixedDeltaTime);
-        // }
         Profiler.EndSample();
         // UpdateHashMap();
     }
@@ -439,22 +399,15 @@ public class SpringMesh : MonoBehaviour
         [ReadOnly] public NativeArray<Vector2> pointVelocities;
         [NativeDisableParallelForRestriction]
         [ReadOnly] public NativeArray<Vector3> positions;
-        [ReadOnly] public NativeArray<Spring> springs;
         public NativeArray<ShaderInput> shaderInput;
 
         public void Execute(int index)
         {
             ShaderInput shader = shaderInput[index];
-            // Spring spring = springs[index];
 
             shader.position = positions[index];
             shader.velocity = pointVelocities[index];
 
-            // shader.firstPoint = positions[spring.firstObjIndex];
-            // shader.secondPoint = positions[spring.secondObjIndex];
-            // shader.firstVelocity = pointVelocities[spring.firstObjIndex];
-            // shader.secondVelocity = pointVelocities[spring.secondObjIndex];
-            // shader.minDistance = spring.initialLength;
             shaderInput[index] = shader;
         }
     }

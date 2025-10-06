@@ -48,28 +48,8 @@ public class impulse : MonoBehaviour
         if (Input.GetMouseButton(0) || Input.GetMouseButton(1))
         {
             current_time = math.max(current_time + Time.fixedDeltaTime, 0.1f);
-            Vector2 target;
-            target = mousePosition;
-            // }
-            NativeArray<Vector2> velocities = springMesh.GetVelocities();
-            NativeArray<Vector3> positions = springMesh.GetPositions();
-            // for (int i = 0; i < positions.Length; i++)
-            // {
-            //     Vector2 position = positions[i];
-            //     Vector2 velocity = velocities[i];
-            //     Vector2 direction = position - target;
-            //     float distance = Vector2.Distance(position, target);
-            //     if (distance > cutoff || distance > cutoff * current_time / time_factor)
-            //     {
-            //         continue;
-            //     }
-            //     float impulse = impulseStrength / distance;
-            //     if (Input.GetMouseButton(1))
-            //     {
-            //         impulse = -impulse;
-            //     }
-            //     velocities[i] = velocity + impulse * direction;
-
+            // NativeArray<Vector2> velocities = springMesh.GetVelocities();
+            // NativeArray<Vector3> positions = springMesh.GetPositions();
             // }
             // foreach (Vector3 position in springMesh.GetPoints())
             // {
