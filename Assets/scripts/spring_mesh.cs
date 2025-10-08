@@ -148,7 +148,7 @@ public class SpringMesh : MonoBehaviour
     }
 
     // Start is called once before the first execution of Update after the MonoBehaviour is created
-    void Start()
+    void Awake()
     {
         meshOrigin = new GameObject("mesh");
         meshOrigin.transform.position = new Vector2(0, 0);
@@ -451,6 +451,7 @@ public class SpringMesh : MonoBehaviour
     {
         return ref positions;
     }
+
 
     public ref ComputeShader GetShader()
     {

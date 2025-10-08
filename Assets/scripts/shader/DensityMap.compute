@@ -1,0 +1,111 @@
+// Each #kernel tells which function to compile; you can have many kernels
+#pragma kernel FillDensityMap
+#pragma kernel CountPoints
+#pragma kernel ClearCount
+#pragma kernel BlurH
+#pragma kernel BlurV
+
+
+float4x4 _WorldToClip;
+int flipY;
+uint _count;
+uint maxDensity;
+int blurRadius;
+StructuredBuffer<float3> positions;
+RWTexture2D<float4> Density;
+RWTexture2D<float4> DensityB;
+RWStructuredBuffer<uint> countBuf;
+
+bool WorldToUV(float3 pos, out float2 uv)
+{
+    float4 clip = mul(_WorldToClip, float4(pos, 1));
+    if (clip.w <= 0)
+    {
+        uv = 0;
+        return false;
+    }
+    float2 ndc = clip.xy / clip.w;
+    uv = ndc * 0.5f + 0.5f;
+    if (flipY == 0)
+        uv.y = 1.0 - uv.y;                   // match URP screen-UV
+    return all(uv >= 0.0) && all(uv <= 1.0); // in-bounds?
+}
+
+[numthreads(8, 8, 1)] void BlurH(uint3 id : SV_DispatchThreadID) {
+    uint W, H;
+    Density.GetDimensions(W, H);
+    if (id.x >= W || id.y >= H)
+        return;
+
+    float4 acc = 0;
+    int taps = 0;
+    for (int dx = -blurRadius; dx <= blurRadius; ++dx)
+    {
+        int sx = clamp((int)id.x + dx, 0, (int)W - 1);
+        acc += Density[int2(sx, id.y)];
+        taps++;
+    }
+    DensityB[uint2(id.xy)] = acc / max(taps / 2, 1);
+};
+
+[numthreads(8, 8, 1)] void BlurV(uint3 id : SV_DispatchThreadID) {
+    uint W, H;
+    Density.GetDimensions(W, H);
+    if (id.x >= W || id.y >= H)
+        return;
+
+    float4 acc = 0;
+    int taps = 0;
+    for (int dy = -blurRadius; dy <= blurRadius; ++dy)
+    {
+        int sy = clamp((int)id.y + dy, 0, (int)H - 1);
+        acc += DensityB[int2(id.x, sy)];
+        taps++;
+    }
+    Density[uint2(id.xy)] = acc / max(taps / 2, 1);
+};
+
+[numthreads(8, 8, 1)] void FillDensityMap(uint3 id : SV_DispatchThreadID) {
+    uint2 xy = uint2(id.x, id.y);
+    uint width, height;
+    Density.GetDimensions(width, height);
+    if (xy.x >= width || xy.y >= height)
+        return;
+    float4 maxColor = float4(1, 1, 1, 1);
+    uint density = min(countBuf[xy.y * width + xy.x], maxDensity);
+
+    Density[xy] = maxColor * (float)density / (float)max(1u, maxDensity);
+};
+
+[numthreads(256, 1, 1)] void CountPoints(uint3 id : SV_DispatchThreadID) {
+    uint index = id.x;
+    if (index >= _count)
+        return;
+
+    float3 position = positions[index];
+    float2 uv;
+    if (!WorldToUV(position, uv))
+        return;
+
+    uint width, height;
+    Density.GetDimensions(width, height);
+    uint2 coords = (uint2)floor(uv * float2(width, height));
+    coords = clamp(coords, uint2(0, 0), uint2(width - 1, height - 1));
+
+    uint old;
+    InterlockedAdd(countBuf[coords.y * width + coords.x], 1u, old);
+};
+
+[numthreads(8, 8, 1)] void ClearCount(uint3 id : SV_DispatchThreadID)
+{
+    uint2 index = id.xy;
+    uint width, height;
+    Density.GetDimensions(width, height);
+    if (index.x >= width || index.y >= height)
+        return;
+
+    uint bufferIndex = index.y * width + index.x;
+    countBuf[bufferIndex] = 0;
+    Density[index] = 0;
+    DensityB[index] = 0;
+}

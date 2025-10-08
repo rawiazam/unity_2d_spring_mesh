@@ -7,7 +7,7 @@ Material:
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_Name: a
+  m_Name: regular grid material
   m_Shader: {fileID: 4800000, guid: 650dd9526735d5b46b79224bc6e94025, type: 3}
   m_Parent: {fileID: 0}
   m_ModifiedSerializedProperties: 0
@@ -205,9 +205,9 @@ Material:
     - _ZWrite: 0
     m_Colors:
     - _BASE_COLOR: {r: 0, g: 0.4117646, b: 1, a: 0}
-    - _BaseColor: {r: 0.57457143, g: 0.27772337, b: 0.745283, a: 0.03137255}
+    - _BaseColor: {r: 0.4426611, g: 0.18609819, b: 0.7735849, a: 0.05490196}
     - _CameraFadeParams: {r: 0, g: Infinity, b: 0, a: 0}
-    - _Color: {r: 0.57457143, g: 0.27772334, b: 0.745283, a: 0.03137255}
+    - _Color: {r: 0.44266108, g: 0.18609816, b: 0.7735849, a: 0.05490196}
     - _ColorA: {r: 0, g: 0, b: 1, a: 1}
     - _ColorAddSubDiff: {r: 0, g: 0, b: 0, a: 0}
     - _ColorB: {r: 1, g: 0, b: 0, a: 1}

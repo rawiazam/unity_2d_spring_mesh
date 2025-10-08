@@ -27,6 +27,9 @@ public class dynamic_mesh : MonoBehaviour
     GraphicsBuffer uploadBuffer;
     GraphicsBuffer vertexBuffer;
 
+    MeshRenderer mRenderer;
+    DensityView densityView;
+
     void Oestroy()
     {
         positions.Dispose();
@@ -34,26 +37,27 @@ public class dynamic_mesh : MonoBehaviour
 
     void Start()
     {
+        densityView = FindFirstObjectByType<DensityView>();
         mesh = new Mesh();
         mesh.MarkDynamic(); // Important for frequent updates
         mesh.indexFormat = IndexFormat.UInt32;
         GetComponent<MeshFilter>().mesh = mesh;
 
         // Make sure MeshRenderer has a simple material
-        var renderer = GetComponent<MeshRenderer>();
-        if (renderer.sharedMaterial == null)
+        mRenderer = GetComponent<MeshRenderer>();
+        if (mRenderer.sharedMaterial == null)
         {
             // Built-in Unlit/Color works in most pipelines
             // renderer.material = new Material(Shader.Find("Unlit/test"));
             // renderer.material.color = Color.green;
-            renderer.material = mat;
+            mRenderer.material = mat;
+            mRenderer.material.SetTexture("_DensityTex", densityView.GetDensityTexture());
         }
 
 
         BuildIndices(); // only once
         mesh.SetVertices(positions);
         mesh.SetIndices(indices, MeshTopology.Lines, 0);
-        Debug.Log($"positions: {positions.Length}, rows: {rows}, cols: {cols}");
         uploadBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Vertex | GraphicsBuffer.Target.CopySource, GraphicsBuffer.UsageFlags.LockBufferForWrite, mesh.vertices.Length, sizeof(float) * 3);
         mesh.vertexBufferTarget |= GraphicsBuffer.Target.CopyDestination;
         vertexBuffer = mesh.GetVertexBuffer(0);
@@ -93,10 +97,11 @@ public class dynamic_mesh : MonoBehaviour
         if (!positions.IsCreated) return;
 
         Profiler.BeginSample("setting mesh data");
-        NativeArray<Vector3> mapped = uploadBuffer.LockBufferForWrite<Vector3>(0, positions.Length);
-        mapped.CopyFrom(positions);
-        uploadBuffer.UnlockBufferAfterWrite<Vector3>(positions.Length);
-        Graphics.CopyBuffer(uploadBuffer, vertexBuffer);
+        // NativeArray<Vector3> mapped = uploadBuffer.LockBufferForWrite<Vector3>(0, positions.Length);
+        // mapped.CopyFrom(positions);
+        // uploadBuffer.UnlockBufferAfterWrite<Vector3>(positions.Length);
+        // Graphics.CopyBuffer(uploadBuffer, vertexBuffer);
+        vertexBuffer.SetData(positions);
         Profiler.EndSample();
     }
 
